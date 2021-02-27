@@ -7,6 +7,9 @@
 # include /src/nextbox-proxy/sites/*;
 
 
+# touch /srv/nextbox-proxy/registered_keys
+
+
 # apt-get install rustc
 
 # create ~/cloudflare.ini

@@ -58,6 +58,8 @@ SUBDOMAIN_CONFIGS_PATH = "/srv/nextbox-proxy/sites"
 SUBDOMAIN_CONFIG_FN_TMPL = "proxy-{subdomain}-{port}"
 SUBDOMAIN_CONFIG_TMPL = "/srv/nextbox-proxy/nginx-proxy.tmpl"
 
+SUBDOMAIN_PAT = re.compile("^[a-zA-Z0-9\-]*$")
+
 AUTH_KEYS = "/srv/nextbox-proxy/registered_keys"
 AUTH_KEYS_LOCK = "/srv/nextbox-proxy/registered_keys.lock"
 AUTH_LINE_TMPL = "ssh-rsa {public_key} {token}@nextbox\n"
@@ -107,9 +109,6 @@ def success(msg=None, data=None):
         "data": data
     })
 
-
-
-
 @app.route("/register", methods=["POST"])
 def register():
     """
@@ -118,7 +117,7 @@ def register():
     data = {}
     restart_nginx = False
 
-    # unknown parameter found
+    # check for unknown parameter
     for key in request.json:
         val = request.json.get(key)
         if key not in REGISTER_PARAMS:
@@ -130,6 +129,18 @@ def register():
     # check for all parameters
     if not(all(key in data for key in REGISTER_PARAMS)):
         msg = "not all parameters provided"
+        log.error(msg)
+        return error(msg)
+
+    # validate public key
+    if not data["public_key"].startswith("AAAAB") or len(data["public_key"]) != 716:
+        msg = "invalid public key provided"
+        log.error(msg)
+        return error(msg)
+
+    # validate subdomain
+    if not SUBDOMAIN_PAT.match(data["subdomain"]):
+        msg = "invalid subdomain provided"
         log.error(msg)
         return error(msg)
 
@@ -148,7 +159,7 @@ def register():
     port2subdomain = {}
     subdomain2port = {}
     for fn in Path(SUBDOMAIN_CONFIGS_PATH).iterdir():
-        toks = fn.split("-")
+        toks = fn.as_posix().split(".")
         if len(toks) == 3 and toks[0] == "proxy":
             _, subdomain, port = toks
             port2subdomain[int(port)] = subdomain
@@ -168,12 +179,6 @@ def register():
         del_fn = SUBDOMAIN_CONFIG_FN_TMPL.format(**del_data)
         p = Path(SUBDOMAIN_CONFIGS_PATH) / del_fn
         p.unlink()
-
-    # validate public key
-    if not data["public_key"].startswith("AAAAB") or len(data["public_key"]) != 544:
-        msg = "invalid public key provided"
-        log.error(msg)
-        return error(msg)
 
     # search public key in `keys`, either:
     # * add it: new token
@@ -208,10 +213,10 @@ def register():
     # write nginx proxy-config file
     with open(SUBDOMAIN_CONFIG_TMPL) as fd:
         nginx_contents = fd.read() \
-          .replace("%%REMOTE_PORT%%", my_port) \
+          .replace("%%REMOTE_PORT%%", str(my_port)) \
           .replace("%%SUBDOMAIN%%", data["subdomain"])
     nginx_fn = SUBDOMAIN_CONFIG_FN_TMPL.format(port=my_port, subdomain=data["subdomain"])
-    conf_path = Path(SUBDOMAIN_CONFIGS_PATH) / del_fn
+    conf_path = Path(SUBDOMAIN_CONFIGS_PATH) / nginx_fn
     with conf_path.open("w") as fd:
         fd.write(nginx_contents)
 
