@@ -1,9 +1,39 @@
+"""
+Token server to handle the NextBox backwards proxy.
+
+Access to a remote NextBox is realized by an backwards-ssh-tunnel, which is initiated
+using `ssh` from the client side, like this:
+```
+ssh -o StrictHostKeyChecking accept-new -p {ssh_port} -f -N -i {key_path} -R {remote_port}:localhost:{local_port} {host}
+```
+
+The following steps have to be done on the client side to realize this:
+* create a asymmetric key pair using ssh-keygen
+  * `ssh-keygen -b 4096 -t rsa -f /path/to/sshkey -q -N ""`
+* `register` with the proxy server using:
+  * `token`, `subdomain` and the contents of /path/to/sshkey.pub (`public_key`)
+* the client can now connect to the proxy-server and the nextbox instance shall be
+  available using `subdomain.nextbox.link`
+
+The server has to set up different components in order to realize this concept.
+
+* Maintain public-keys inside `authorized_keys` with all registered users
+  * line template: "ssh-rsa <public-key len:544> <token>@nextbox <@TODO: correct addition for tunneling only>"
+  * don't keep subdomain here, thus changing the subdomain does not require changing `authorized_keys`
+
+* Maintain a config for each proxied NextBox within nginx-sites-path (available + enabled)
+  * file template: proxy-<subdomain>-<port>
+
+
+"""
+
 import os
 import sys
 import re
 from pathlib import Path
 from functools import wraps
 import signal
+import time
 
 import shutil
 import socket
@@ -11,6 +41,8 @@ import urllib.request, urllib.error
 import ssl
 import json
 import logging
+
+from filelock import FileLock
 
 from flask import Flask, render_template, request, flash, redirect, Response, \
     url_for, send_file, Blueprint, render_template, jsonify, make_response
@@ -24,8 +56,16 @@ MAX_LOG_SIZE = 2**20
 SUBDOMAIN_CONFIGS_PATH = "/etc/nginx/available-sites"
 SUBDOMAIN_CONFIGS_ENABLED_PATH = "/etc/nginx/enabled-sites"
 SUBDOMAIN_CONFIG_FN_TMPL = "proxy-{subdomain}-{port}"
+SUBDOMAIN_CONFIG_TMPL = "/srv/nextbox-proxy/nginx-proxy.tmpl"
 
-INITIAL_PORT = 14792
+AUTH_KEYS = "/srv/nextbox-proxy/registered_keys"
+AUTH_KEYS_LOCK = "/srv/nextbox-proxy/registered_keys.lock"
+AUTH_LINE_TMPL = "ssh-rsa {public_key} {token}@nextbox\n"
+
+auth_lock = FileLock(AUTH_KEYS_LOCK, timeout=10)
+
+
+INITIAL_PORT = 14799
 
 ALLOWED_TOKENS = [
   "12345678900000000001",
@@ -69,8 +109,9 @@ def success(msg=None, data=None):
     })
 
 
+
+
 @app.route("/register", methods=["POST"])
-@requires_auth
 def register():
     """
     register new `subdomain` using `token` auth with `public_key`
@@ -126,15 +167,47 @@ def register():
     if existing_domain != data["subdomain"]:
         del_data = {"subdomain": existing_domain, "port": my_port}
         del_fn = SUBDOMAIN_CONFIG_FN_TMPL.format(**del_data)
-        p1 = Path(SUBDOMAINS_CONFIG_PATH) / del_fn
+        p1 = Path(SUBDOMAIN_CONFIGS_PATH) / del_fn
         p2 = Path(SUBDOMAIN_CONFIGS_ENABLED_PATH) / del_fn
         p1.unlink()
         p2.unlink()
-        # @todo: remove public key from authorized keys...
 
+    # validate public key
+    if not data["public_key"].startswith("AAAAB") or len(data["public_key"]) != 544:
+        msg = "invalid public key provided"
+        log.error(msg)
+        return error(msg)
 
+    # search public key in `keys`, either:
+    # * add it: new token
+    # * replace it token and pub-key don't match
+    # * do nothing: token and pub-key combination found
+    buf = ""
+    auth_line = "ssh-ras"
+    changed = False
+    found = False
+    with auth_lock:
+        with open(AUTH_KEYS) as fd:
+            for line in fd:
+                if data["token"] in line:
+                    if data["public_key"] in line:
+                        buf += line
+                        found = True
+                    else
+                        buf += AUTH_LINE_TMPL.format(**data)
+                        changed = True
+                else:
+                    buf += line
+        # to add, just append
+        if not found and not changed:
+            with open(AUTH_KEYS, "a") as fd:
+                fd.write(AUTH_LINE_TMPL.format(**data))
+        # if changed, re-write file using buf (without old line) adding new line
+        if changed:
+            buf += AUTH_LINE_TMPL.format(**data)
+            with open(AUTH_KEYS, "w") as fd:
+                fd.write(buf)
 
-    # @todo: can we validate the public key ????
 
     # ok, from here on we are ready to do all the stuff needed:
     # -> create proxy-<domain>-<port> inside /etc/nginx-available-sites
