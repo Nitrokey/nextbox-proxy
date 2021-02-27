@@ -41,6 +41,7 @@ import urllib.request, urllib.error
 import ssl
 import json
 import logging
+import logging.handlers
 
 from filelock import FileLock
 
@@ -49,12 +50,11 @@ from flask import Flask, render_template, request, flash, redirect, Response, \
 
 
 REGISTER_PARAMS = ["token", "subdomain", "public_key"]
-LOG_FILENAME = "/var/logs/token-server.log"
+LOG_FILENAME = "/srv/nextbox-proxy/token-server.log"
 LOGGER_NAME = "token-server"
 MAX_LOG_SIZE = 2**20
 
-SUBDOMAIN_CONFIGS_PATH = "/etc/nginx/available-sites"
-SUBDOMAIN_CONFIGS_ENABLED_PATH = "/etc/nginx/enabled-sites"
+SUBDOMAIN_CONFIGS_PATH = "/srv/nextbox-proxy/sites"
 SUBDOMAIN_CONFIG_FN_TMPL = "proxy-{subdomain}-{port}"
 SUBDOMAIN_CONFIG_TMPL = "/srv/nextbox-proxy/nginx-proxy.tmpl"
 
@@ -63,7 +63,6 @@ AUTH_KEYS_LOCK = "/srv/nextbox-proxy/registered_keys.lock"
 AUTH_LINE_TMPL = "ssh-rsa {public_key} {token}@nextbox\n"
 
 auth_lock = FileLock(AUTH_KEYS_LOCK, timeout=10)
-
 
 INITIAL_PORT = 14799
 
@@ -167,10 +166,8 @@ def register():
     if existing_domain != data["subdomain"]:
         del_data = {"subdomain": existing_domain, "port": my_port}
         del_fn = SUBDOMAIN_CONFIG_FN_TMPL.format(**del_data)
-        p1 = Path(SUBDOMAIN_CONFIGS_PATH) / del_fn
-        p2 = Path(SUBDOMAIN_CONFIGS_ENABLED_PATH) / del_fn
-        p1.unlink()
-        p2.unlink()
+        p = Path(SUBDOMAIN_CONFIGS_PATH) / del_fn
+        p.unlink()
 
     # validate public key
     if not data["public_key"].startswith("AAAAB") or len(data["public_key"]) != 544:
@@ -193,7 +190,7 @@ def register():
                     if data["public_key"] in line:
                         buf += line
                         found = True
-                    else
+                    else:
                         buf += AUTH_LINE_TMPL.format(**data)
                         changed = True
                 else:
@@ -208,25 +205,18 @@ def register():
             with open(AUTH_KEYS, "w") as fd:
                 fd.write(buf)
 
+    # write nginx proxy-config file
+    with open(SUBDOMAIN_CONFIG_TMPL) as fd:
+        nginx_contents = fd.read() \
+          .replace("%%REMOTE_PORT%%", my_port) \
+          .replace("%%SUBDOMAIN%%", data["subdomain"])
+    nginx_fn = SUBDOMAIN_CONFIG_FN_TMPL.format(port=my_port, subdomain=data["subdomain"])
+    conf_path = Path(SUBDOMAIN_CONFIGS_PATH) / del_fn
+    with conf_path.open("w") as fd:
+        fd.write(nginx_contents)
 
-    # ok, from here on we are ready to do all the stuff needed:
-    # -> create proxy-<domain>-<port> inside /etc/nginx-available-sites
-    # -> create link to available sites
-    # -> add public key to authorized keys (maybe also add it as comment to proxy-<dom>-<port> file)
-    #    -> include restricted stuff for tunneling only ...
-    # -> restart nginx
+    # reload nginx (what happens on error?)
+    os.system("systemctl reload nginx")
 
-
-
-
-    with open("nginx-proxy.tmpl") as fd:
-        tmpl = fd.read()
-
-
-
-    # return json with: port, proxy-server-ip(?)
-
-
-
-
+    return success(data={"port": my_port, "subdomain": data["subdomain"]})
 
