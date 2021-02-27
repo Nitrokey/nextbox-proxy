@@ -119,8 +119,8 @@ def register():
     restart_nginx = False
 
     # unknown parameter found
-    for key in request.form:
-        val = request.form.get(key)
+    for key in request.json:
+        val = request.json.get(key)
         if key not in REGISTER_PARAMS:
             msg = "unknown parameter"
             log.error(msg)
@@ -163,7 +163,7 @@ def register():
 
     # port exists, but subdomain differs: delete subdomain
     existing_domain = port2subdomain.get(my_port)
-    if existing_domain != data["subdomain"]:
+    if existing_domain is not None and existing_domain != data["subdomain"]:
         del_data = {"subdomain": existing_domain, "port": my_port}
         del_fn = SUBDOMAIN_CONFIG_FN_TMPL.format(**del_data)
         p = Path(SUBDOMAIN_CONFIGS_PATH) / del_fn
@@ -180,7 +180,7 @@ def register():
     # * replace it token and pub-key don't match
     # * do nothing: token and pub-key combination found
     buf = ""
-    auth_line = "ssh-ras"
+    auth_line = "ssh-rsa"
     changed = False
     found = False
     with auth_lock:
