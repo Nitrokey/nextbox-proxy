@@ -4,7 +4,7 @@ Token server to handle the NextBox backwards proxy.
 Access to a remote NextBox is realized by an backwards-ssh-tunnel, which is initiated
 using `ssh` from the client side, like this:
 ```
-ssh -o StrictHostKeyChecking accept-new -p {ssh_port} -f -N -i {key_path} -R {remote_port}:localhost:{local_port} {host}
+ssh -o StrictHostKeyChecking=accept-new -p {ssh_port} -f -N -i {key_path} -R {remote_port}:localhost:{local_port} {user}@{host}
 ```
 
 The following steps have to be done on the client side to realize this:
@@ -60,8 +60,8 @@ SUBDOMAIN_CONFIG_TMPL = "/srv/nextbox-proxy/nginx-proxy.tmpl"
 
 SUBDOMAIN_PAT = re.compile("^[a-zA-Z0-9\-]*$")
 
-AUTH_KEYS = "/srv/nextbox-proxy/registered_keys"
-AUTH_KEYS_LOCK = "/srv/nextbox-proxy/registered_keys.lock"
+AUTH_KEYS = (Path(os.environ["HOME"]) / ".ssh" / "authorized_keys").as_posix()
+AUTH_KEYS_LOCK = (Path(os.environ["HOME"]) / ".ssh" / "authorized_keys.lock").as_posix()
 AUTH_LINE_TMPL = "ssh-rsa {public_key} {token}@nextbox\n"
 
 auth_lock = FileLock(AUTH_KEYS_LOCK, timeout=10)
