@@ -221,7 +221,7 @@ def register():
         fd.write(nginx_contents)
 
     # reload nginx (what happens on error?)
-    os.system("sudo /bin/systemctl reload nginx")
+    os.system("sudo /bin/systemctl reload nginx.service")
 
     return success(data={"port": my_port, "subdomain": data["subdomain"]})
 
