@@ -220,3 +220,7 @@ def register():
 
     return success(data={"port": my_port, "subdomain": data["subdomain"]})
 
+
+if __name__ == "__main__":
+    app.run("0.0.0.0", 8080)
+
