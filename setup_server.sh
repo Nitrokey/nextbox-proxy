@@ -2,8 +2,21 @@
 
 # apt-get install sudo nginx rustc
 
-#Cmnd_Alias MYAPP_CMNDS = /bin/systemctl reload nginx
-#proxyuser ALL=(ALL) NOPASSWD: MYAPP_CMNDS
+
+##### /etc/sudoers
+
+#proxyuser ALL=NOPASSWD: /bin/systemctl reload nginx.service
+
+##### sshd_config
+#### https://askubuntu.com/questions/48129/how-to-create-a-restricted-ssh-user-for-port-forwarding#50000
+#Match User proxyuser
+#   #AllowTcpForwarding yes
+#   #X11Forwarding no
+#   #PermitTunnel no
+#   #GatewayPorts no
+#   AllowAgentForwarding no
+#   PermitOpen localhost:*
+#   ForceCommand echo 'Only NextBox BackwardProxy'
 
 
 # mkdir -p /srv/nextbox-proxy/sites
