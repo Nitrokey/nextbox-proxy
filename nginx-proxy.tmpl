@@ -16,8 +16,8 @@ server {
 	    access_log off;
     }
 
-    include /etc/nginx/proxy.conf;
-    include /etc/nginx/header.conf;
+    include /srv/nextbox-proxy/proxy.conf;
+    include /etc/nextbox-proxy/header.conf;
 
     client_max_body_size 10240M;
 
