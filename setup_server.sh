@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# apt-get install sudo nginx rustc
+
+#Cmnd_Alias MYAPP_CMNDS = /bin/systemctl reload nginx
+#proxyuser ALL=(ALL) NOPASSWD: MYAPP_CMNDS
+
+
 # mkdir -p /srv/nextbox-proxy/sites
 
 
@@ -9,8 +15,6 @@
 
 # touch /srv/nextbox-proxy/registered_keys
 
-
-# apt-get install rustc
 
 # create ~/cloudflare.ini
 # pip3 install -U certbot cloudflare certbot_dns_cloudflare
