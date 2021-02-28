@@ -71,7 +71,7 @@ INITIAL_PORT = 14799
 TOKEN_PATH = "/srv/nextbox-proxy/nextcloud-proxy.tokens"
 
 with open(TOKEN_PATH) as fd:
-    ALLOWED_TOKENS = [tok.strip() for tok in fd.readlines]
+    ALLOWED_TOKENS = [tok.strip() for tok in fd.readlines()]
 
 app = Flask(__name__)
 app.secret_key = "123456-nextbox-proxy-123456"
