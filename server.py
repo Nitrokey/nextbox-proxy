@@ -105,6 +105,10 @@ def success(msg=None, data=None):
         "data": data
     })
 
+def reload_nginx():
+    os.system("sudo /bin/systemctl reload nginx.service")
+
+
 @app.route("/register", methods=["POST"])
 def register():
     """
@@ -156,8 +160,16 @@ def register():
     subdomain2port = {}
     for fn in Path(SUBDOMAIN_CONFIGS_PATH).iterdir():
         toks = fn.as_posix().split(".")
-        if len(toks) == 3 and toks[0] == "proxy":
+        if len(toks) == 3 and toks[0].endswith("proxy"):
             _, subdomain, port = toks
+
+            # hard delete any evil entries!
+            if subdomain in subdomain2port or int(port) in port2subdomain:
+                fn.unlink()
+                reload_nginx()
+                log.warn("found double entry (port or subdomain) - deleted!")
+                continue
+
             port2subdomain[int(port)] = subdomain
             subdomain2port[subdomain] = int(port)
 
@@ -218,8 +230,7 @@ def register():
     with conf_path.open("w") as fd:
         fd.write(nginx_contents)
 
-    # reload nginx (what happens on error?)
-    os.system("sudo /bin/systemctl reload nginx.service")
+    reload_nginx()
 
     return success(data={"port": my_port, "subdomain": data["subdomain"]})
 
