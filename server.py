@@ -167,7 +167,7 @@ def register():
             if subdomain in subdomain2port or int(port) in port2subdomain:
                 fn.unlink()
                 reload_nginx()
-                log.warn("found double entry (port or subdomain) - deleted!")
+                log.warning("found double entry (port or subdomain) - deleted!")
                 continue
 
             port2subdomain[int(port)] = subdomain
