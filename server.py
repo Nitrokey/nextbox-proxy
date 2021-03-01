@@ -175,6 +175,8 @@ def register():
         del_fn = SUBDOMAIN_CONFIG_FN_TMPL.format(**del_data)
         p = Path(SUBDOMAIN_CONFIGS_PATH) / del_fn
         p.unlink()
+        log.info(f"port already assigned to other subdomain, deleted...")
+
 
     # search public key in `keys`, either:
     # * add it: new token
