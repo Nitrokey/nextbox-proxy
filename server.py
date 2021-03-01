@@ -55,7 +55,7 @@ LOGGER_NAME = "token-server"
 MAX_LOG_SIZE = 2**20
 
 SUBDOMAIN_CONFIGS_PATH = "/srv/nextbox-proxy/sites"
-SUBDOMAIN_CONFIG_FN_TMPL = "proxy-{subdomain}-{port}"
+SUBDOMAIN_CONFIG_FN_TMPL = "proxy.{subdomain}.{port}"
 SUBDOMAIN_CONFIG_TMPL = "/srv/nextbox-proxy/nginx-proxy.tmpl"
 
 SUBDOMAIN_PAT = re.compile("^[a-zA-Z0-9\-]*$")
