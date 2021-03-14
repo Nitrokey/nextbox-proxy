@@ -52,11 +52,6 @@ SUBDOMAIN_CONFIG_TMPL = "/srv/nextbox-proxy/nginx-proxy.tmpl"
 
 SUBDOMAIN_PAT = re.compile("^[a-zA-Z0-9\-]*$")
 
-# AUTH_KEYS = (Path(os.environ["HOME"]) / ".ssh" / "authorized_keys").as_posix()
-# AUTH_KEYS_LOCK = (Path(os.environ["HOME"]) / ".ssh" / "authorized_keys.lock").as_posix()
-# AUTH_LINE_TMPL = "ssh-rsa {public_key} {token}@nextbox\n"
-
-
 INITIAL_PORT = 14799
 
 TOKEN_PATH = "/srv/nextbox-proxy/nextcloud-proxy.tokens"
@@ -109,7 +104,7 @@ def reload_services(tunnel=False):
 @app.route("/register", methods=["POST"])
 def register():
     """
-    register new `subdomain` using `token` auth with `public_key`
+    register new `subdomain` using `token`
     """
     data = {}
     restart_tunnel_server = False
@@ -126,12 +121,6 @@ def register():
     # check for all parameters
     if not(all(key in data for key in REGISTER_PARAMS)):
         msg = "not all parameters provided"
-        log.error(msg)
-        return error(msg)
-
-    # validate public key
-    if not data["public_key"].startswith("AAAAB") or len(data["public_key"]) != 716:
-        msg = "invalid public key provided"
         log.error(msg)
         return error(msg)
 
