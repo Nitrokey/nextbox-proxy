@@ -57,7 +57,7 @@ INITIAL_PORT = 14799
 TOKEN_PATH = "/srv/nextbox-proxy/nextcloud-proxy.tokens"
 
 RTUN_CONF_PATH = "/srv/nextbox-proxy/rtun.yaml"
-rtun_lock = FileLock(RTUN_CONF_PATH, timeout=10)
+rtun_lock = FileLock(RTUN_CONF_PATH + ".lock", timeout=10)
 
 
 with open(TOKEN_PATH) as fd:
@@ -152,7 +152,7 @@ def register():
             # hard delete any evil entries!
             if subdomain in subdomain2port or int(port) in port2subdomain:
                 fn.unlink()
-                reload_nginx()
+                reload_services()
                 log.warning("found double entry (port or subdomain) - deleted!")
                 continue
 
