@@ -34,7 +34,7 @@ from pathlib import Path
 from functools import wraps
 import signal
 import time
-
+import yaml
 import shutil
 import socket
 import urllib.request, urllib.error
@@ -49,7 +49,7 @@ from flask import Flask, render_template, request, flash, redirect, Response, \
     url_for, send_file, Blueprint, render_template, jsonify, make_response
 
 
-REGISTER_PARAMS = ["token", "subdomain", "public_key"]
+REGISTER_PARAMS = ["token", "subdomain"]
 LOG_FILENAME = "/srv/nextbox-proxy/token-server.log"
 LOGGER_NAME = "token-server"
 MAX_LOG_SIZE = 2**20
@@ -60,15 +60,18 @@ SUBDOMAIN_CONFIG_TMPL = "/srv/nextbox-proxy/nginx-proxy.tmpl"
 
 SUBDOMAIN_PAT = re.compile("^[a-zA-Z0-9\-]*$")
 
-AUTH_KEYS = (Path(os.environ["HOME"]) / ".ssh" / "authorized_keys").as_posix()
-AUTH_KEYS_LOCK = (Path(os.environ["HOME"]) / ".ssh" / "authorized_keys.lock").as_posix()
-AUTH_LINE_TMPL = "ssh-rsa {public_key} {token}@nextbox\n"
+# AUTH_KEYS = (Path(os.environ["HOME"]) / ".ssh" / "authorized_keys").as_posix()
+# AUTH_KEYS_LOCK = (Path(os.environ["HOME"]) / ".ssh" / "authorized_keys.lock").as_posix()
+# AUTH_LINE_TMPL = "ssh-rsa {public_key} {token}@nextbox\n"
 
-auth_lock = FileLock(AUTH_KEYS_LOCK, timeout=10)
 
 INITIAL_PORT = 14799
 
 TOKEN_PATH = "/srv/nextbox-proxy/nextcloud-proxy.tokens"
+
+RTUN_CONF_PATH = "/srv/nextbox-proxy/rtun.yaml"
+rtun_lock = FileLock(RTUN_CONF_PATH, timeout=10)
+
 
 with open(TOKEN_PATH) as fd:
     ALLOWED_TOKENS = [tok.strip() for tok in fd.readlines()]
@@ -115,8 +118,7 @@ def register():
     register new `subdomain` using `token` auth with `public_key`
     """
     data = {}
-    restart_nginx = False
-
+    
     # check for unknown parameter
     for key in request.json:
         val = request.json.get(key)
@@ -190,35 +192,49 @@ def register():
         log.info(f"port already assigned to other subdomain, deleted...")
 
 
+    with rtun_lock:
+        with open(RTUN_CONF_PATH) as fd:
+            rtun_conf = yaml.load(fd)
+
+    rtun_tokens = set(agent["auth_key"] for agent in rtun_conf["agents"])
+    if data["token"] not in rtun_tokens:
+        rtun_conf["agents"].append({
+            "auth_key": data["token"],
+            "ports": [f"{my_port}/tcp"],
+        })
+    with rtun_lock:
+        with open(RTUN_CONF_PATH, "w") as fd:
+            yaml.dump(rtun_conf, fd)
+
     # search public key in `keys`, either:
     # * add it: new token
     # * replace it token and pub-key don't match
     # * do nothing: token and pub-key combination found
-    buf = ""
-    auth_line = "ssh-rsa"
-    changed = False
-    found = False
-    with auth_lock:
-        with open(AUTH_KEYS) as fd:
-            for line in fd:
-                if data["token"] in line:
-                    if data["public_key"] in line:
-                        buf += line
-                        found = True
-                    else:
-                        buf += AUTH_LINE_TMPL.format(**data)
-                        changed = True
-                else:
-                    buf += line
-        # to add, just append
-        if not found and not changed:
-            with open(AUTH_KEYS, "a") as fd:
-                fd.write(AUTH_LINE_TMPL.format(**data))
-        # if changed, re-write file using buf (without old line) adding new line
-        if changed:
-            buf += AUTH_LINE_TMPL.format(**data)
-            with open(AUTH_KEYS, "w") as fd:
-                fd.write(buf)
+    # buf = ""
+    # auth_line = "ssh-rsa"
+    # changed = False
+    # found = False
+    # with auth_lock:
+    #     with open(AUTH_KEYS) as fd:
+    #         for line in fd:
+    #             if data["token"] in line:
+    #                 if data["public_key"] in line:
+    #                     buf += line
+    #                     found = True
+    #                 else:
+    #                     buf += AUTH_LINE_TMPL.format(**data)
+    #                     changed = True
+    #             else:
+    #                 buf += line
+    #     # to add, just append
+    #     if not found and not changed:
+    #         with open(AUTH_KEYS, "a") as fd:
+    #             fd.write(AUTH_LINE_TMPL.format(**data))
+    #     # if changed, re-write file using buf (without old line) adding new line
+    #     if changed:
+    #         buf += AUTH_LINE_TMPL.format(**data)
+    #         with open(AUTH_KEYS, "w") as fd:
+    #             fd.write(buf)
 
     # write nginx proxy-config file
     with open(SUBDOMAIN_CONFIG_TMPL) as fd:
