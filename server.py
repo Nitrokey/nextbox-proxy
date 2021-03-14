@@ -1,28 +1,20 @@
 """
 Token server to handle the NextBox backwards proxy.
 
-Access to a remote NextBox is realized by an backwards-ssh-tunnel, which is initiated
-using `ssh` from the client side, like this:
-```
-ssh -o StrictHostKeyChecking=accept-new -p {ssh_port} -f -N -i {key_path} -R {remote_port}:localhost:{local_port} {user}@{host}
-```
-
 The following steps have to be done on the client side to realize this:
-* create a asymmetric key pair using ssh-keygen
-  * `ssh-keygen -b 4096 -t rsa -f /path/to/sshkey -q -N ""`
 * `register` with the proxy server using:
-  * `token`, `subdomain` and the contents of /path/to/sshkey.pub (`public_key`)
+  * `token`, `subdomain`
+* use received port to write a client rtun.yaml
+
 * the client can now connect to the proxy-server and the nextbox instance shall be
   available using `subdomain.nextbox.link`
 
 The server has to set up different components in order to realize this concept.
 
-* Maintain public-keys inside `authorized_keys` with all registered users
-  * line template: "ssh-rsa <public-key len:544> <token>@nextbox <@TODO: correct addition for tunneling only>"
-  * don't keep subdomain here, thus changing the subdomain does not require changing `authorized_keys`
-
 * Maintain a config for each proxied NextBox within nginx-sites-path (available + enabled)
   * file template: proxy-<subdomain>-<port>
+
+* Maintain rtun.yaml with agents' 'auth_key' being the token + assigned port for token
 
 
 """
@@ -108,8 +100,10 @@ def success(msg=None, data=None):
         "data": data
     })
 
-def reload_nginx():
+def reload_services(tunnel=False):
     os.system("sudo /bin/systemctl reload nginx.service")
+    if tunnel:
+        os.system("sudo /bin/systemctl restart reverse-tunnel.service")
 
 
 @app.route("/register", methods=["POST"])
@@ -118,7 +112,8 @@ def register():
     register new `subdomain` using `token` auth with `public_key`
     """
     data = {}
-    
+    restart_tunnel_server = False
+
     # check for unknown parameter
     for key in request.json:
         val = request.json.get(key)
@@ -191,50 +186,22 @@ def register():
         p.unlink()
         log.info(f"port already assigned to other subdomain, deleted...")
 
-
+    # read rtun.yaml config
     with rtun_lock:
         with open(RTUN_CONF_PATH) as fd:
             rtun_conf = yaml.load(fd)
-
+    # check if config contains auth_key already (token), add if needed
     rtun_tokens = set(agent["auth_key"] for agent in rtun_conf["agents"])
     if data["token"] not in rtun_tokens:
         rtun_conf["agents"].append({
             "auth_key": data["token"],
             "ports": [f"{my_port}/tcp"],
         })
-    with rtun_lock:
-        with open(RTUN_CONF_PATH, "w") as fd:
-            yaml.dump(rtun_conf, fd)
-
-    # search public key in `keys`, either:
-    # * add it: new token
-    # * replace it token and pub-key don't match
-    # * do nothing: token and pub-key combination found
-    # buf = ""
-    # auth_line = "ssh-rsa"
-    # changed = False
-    # found = False
-    # with auth_lock:
-    #     with open(AUTH_KEYS) as fd:
-    #         for line in fd:
-    #             if data["token"] in line:
-    #                 if data["public_key"] in line:
-    #                     buf += line
-    #                     found = True
-    #                 else:
-    #                     buf += AUTH_LINE_TMPL.format(**data)
-    #                     changed = True
-    #             else:
-    #                 buf += line
-    #     # to add, just append
-    #     if not found and not changed:
-    #         with open(AUTH_KEYS, "a") as fd:
-    #             fd.write(AUTH_LINE_TMPL.format(**data))
-    #     # if changed, re-write file using buf (without old line) adding new line
-    #     if changed:
-    #         buf += AUTH_LINE_TMPL.format(**data)
-    #         with open(AUTH_KEYS, "w") as fd:
-    #             fd.write(buf)
+        # and write to .yaml if updated
+        with rtun_lock:
+            with open(RTUN_CONF_PATH, "w") as fd:
+                yaml.dump(rtun_conf, fd)
+        restart_tunnel_server = True
 
     # write nginx proxy-config file
     with open(SUBDOMAIN_CONFIG_TMPL) as fd:
@@ -246,7 +213,7 @@ def register():
     with conf_path.open("w") as fd:
         fd.write(nginx_contents)
 
-    reload_nginx()
+    reload_services(restart_tunnel_server)
 
     return success(data={"port": my_port, "subdomain": data["subdomain"]})
 
