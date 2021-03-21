@@ -41,7 +41,7 @@ from flask import Flask, render_template, request, flash, redirect, Response, \
     url_for, send_file, Blueprint, render_template, jsonify, make_response
 
 
-REGISTER_PARAMS = ["token", "subdomain"]
+REGISTER_PARAMS = ["token", "subdomain", "scheme"]
 LOG_FILENAME = "/srv/nextbox-proxy/token-server.log"
 LOGGER_NAME = "token-server"
 MAX_LOG_SIZE = 2**20
@@ -130,6 +130,12 @@ def register():
         log.error(msg)
         return error(msg)
 
+    # validate scheme
+    if not data["scheme"] in ["http", "https"]:
+        msg = f"invalid scheme provided: {data['scheme']}"
+        log.error(msg)
+        return error(msg)
+
     # determine port for token
     try:
         token_idx = ALLOWED_TOKENS.index(data["token"])
@@ -196,7 +202,9 @@ def register():
     with open(SUBDOMAIN_CONFIG_TMPL) as fd:
         nginx_contents = fd.read() \
           .replace("%%REMOTE_PORT%%", str(my_port)) \
-          .replace("%%SUBDOMAIN%%", data["subdomain"])
+          .replace("%%SUBDOMAIN%%", data["subdomain"]) \
+          .replace("%%REMOTE_SCHEME%%", data["scheme"])
+
     nginx_fn = SUBDOMAIN_CONFIG_FN_TMPL.format(port=my_port, subdomain=data["subdomain"])
     conf_path = Path(SUBDOMAIN_CONFIGS_PATH) / nginx_fn
     with conf_path.open("w") as fd:
@@ -204,7 +212,7 @@ def register():
 
     reload_services(restart_tunnel_server)
 
-    return success(data={"port": my_port, "subdomain": data["subdomain"]})
+    return success(data={"port": my_port, "subdomain": data["subdomain"], "scheme": data["scheme"]})
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ server {
     location ^~ / {
 	    client_max_body_size 10G;
 	    send_timeout 3600;
-	    proxy_pass http://127.0.0.1:%%REMOTE_PORT%%;
+	    proxy_pass %%REMOTE_SCHEME%%://127.0.0.1:%%REMOTE_PORT%%;
     }
     location = /.well-known/carddav {
 	    return 301 $scheme://$host/remote.php/dav;
