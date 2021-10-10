@@ -34,6 +34,7 @@ import ssl
 import json
 import logging
 import logging.handlers
+import requests
 
 from filelock import FileLock
 
@@ -99,6 +100,49 @@ def reload_services(tunnel=False):
     os.system("sudo /bin/systemctl reload nginx.service")
     if tunnel:
         os.system("sudo /bin/systemctl restart reverse-tunnel.service")
+
+
+@app.route("/test/<ip_type>", methods=["POST"])
+def test_ip(ip_type):
+    if ip_type not in ["ipv4", "ipv6"]:
+        return error("bad request")
+
+    post_keys = ["addr", "token"]
+    json = request.json
+    if any(key not in json.keys() for key in post_keys) or \
+            len(post_keys) != len(json.keys()):
+        return error("bad request args")
+
+    token = json.get("token")
+    addr = json.get("addr")
+
+    if token not in ALLOWED_TOKENS:
+        return error("not authorized")
+    
+    if ip_type == "ipv4" and addr.count(".") != 3:
+        return error("bad ipv4-addr provided")
+    
+    if ip_type == "ipv6" and addr.count(":") < 2:
+        return error("bad ipv6-addr provided")
+
+    pat = re.compile("<title>[^<]+</title>")
+    
+    url = addr if ip_type == "ipv4" else f"[{addr}]"
+    res_http = requests.get(f"http://{url}")
+    res_https = requests.get(f"https://{url}")
+
+    print(res_http.text, res_https.text)
+
+    print(pat.findall(res_http.text), pat.findall(res_https.text))
+
+    results = {
+        "addr": addr,
+        "http": "Nextcloud" in pat.findall(res_http.text),
+        "https": "Nextcloud" in pat.findall(res_https.text),
+    }
+
+    return success("test done", data=results)
+   
 
 
 @app.route("/register", methods=["POST"])
