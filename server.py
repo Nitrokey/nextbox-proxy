@@ -102,47 +102,70 @@ def reload_services(tunnel=False):
         os.system("sudo /bin/systemctl restart reverse-tunnel.service")
 
 
-@app.route("/test/<ip_type>", methods=["POST"])
-def test_ip(ip_type):
-    if ip_type not in ["ipv4", "ipv6"]:
-        return error("bad request")
+@app.route("/reachable", methods=["POST"])
+def my_reach_test():
+    post_keys = ["ipv6", "token", "ipv4", "domain"]
 
-    post_keys = ["addr", "token"]
     json = request.json
+    if json is None:
+        return error("no args provided")
+
     if any(key not in json.keys() for key in post_keys) or \
             len(post_keys) != len(json.keys()):
         return error("bad request args")
 
     token = json.get("token")
-    addr = json.get("addr")
+    ipv4 = json.get("ipv4") or ""
+    ipv6 = "[" + json.get("ipv6") + "]" if json.get("ipv6") else ""
+    domain = json.get("domain") or ""
 
     if token not in ALLOWED_TOKENS:
         return error("not authorized")
     
-    if ip_type == "ipv4" and addr.count(".") != 3:
+    if ipv4 and ipv4.count(".") != 3:
         return error("bad ipv4-addr provided")
     
-    if ip_type == "ipv6" and addr.count(":") < 2:
+    if ipv6 and ipv6.count(":") < 2:
         return error("bad ipv6-addr provided")
 
     pat = re.compile("<title>[^<]+</title>")
     
-    url = addr if ip_type == "ipv4" else f"[{addr}]"
-    res_http = requests.get(f"http://{url}")
-    res_https = requests.get(f"https://{url}")
+    results = {}
 
-    print(res_http.text, res_https.text)
+    def check(proto, url, timeout=1):
+        dct = {}
+        try:
+            res = requests.get(f"{proto}://{url}", timeout=timeout)
+            dct["verified"] = True
+            dct["reachable"] = True
+        except requests.exceptions.SSLError:
+            try:
+                res = requests.get(f"{proto}://{url}", verify=False)
+                dct["verified"] = False
+                dct["reachable"] = True
+            except requests.exceptions.ConnectionError:
+                dct["verified"] = False
+                dct["reachable"] = False
+                dct["elapsed"] = -1
+                return dct
+        except requests.exceptions.ConnectionError:
+            dct["verified"] = False
+            dct["reachable"] = False
+            dct["elapsed"] = -1
+            return dct
 
-    print(pat.findall(res_http.text), pat.findall(res_https.text))
+        hay = pat.findall(res.text)
+        dct["nextcloud"] = "Nextcloud" in hay[0] if len(hay) > 0 else False
+        dct["elapsed"] = res.elapsed.total_seconds()
+        return dct
 
-    results = {
-        "addr": addr,
-        "http": "Nextcloud" in pat.findall(res_http.text),
-        "https": "Nextcloud" in pat.findall(res_https.text),
-    }
+    for addr in [ipv4, ipv6, domain]:
+        if not addr:
+            continue
+        for proto in ["http", "https"]:
+            results.setdefault(proto, {})[addr] = check(proto, addr)
 
-    return success("test done", data=results)
-   
+    return success("tests done", data=results)
 
 
 @app.route("/register", methods=["POST"])
